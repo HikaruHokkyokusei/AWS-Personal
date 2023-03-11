@@ -1,0 +1,18 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-version:
+      python: 3.8
+    commands:
+      - echo "Install Phase End"
+  build:
+    commands:
+      - echo "Build Phase End"
+  post_build:
+    commands:
+      - ls
+      - echo "Updating Lambda Function..."
+      - aws lambda update-function-code --function-name HikaruHatsuS3LambdaFunction --zip-file fileb://cft-lambda-s3BucketCode.zip
+      - echo "Done!!"
+      - echo "Exiting..."

@@ -1,0 +1,501 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Test template to get used to AWS CFT",
+    "Parameters": {
+        "Environment": {
+            "Description": "DEV/STG/PRD",
+            "Type": "String",
+            "Default": "DEV",
+            "AllowedValues": [
+                "DEV"
+            ]
+        }
+    },
+    "Mappings": {
+        "Environments": {
+            "DEV": {
+                "EnvName": "dev",
+                "VpcId": "vpc-f242e789",
+                "CodeBuildSubnet": "subnet-af9371e5",
+                "RepoOwner": "jainh",
+                "RepoName": "ci-cd-lambda-cft-test",
+                "BranchName": "master"
+            }
+        }
+    },
+    "Resources": {
+        "HikaruHatsuS3LambdaFunExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "HikaruHatsuS3LambdaFunExecutionRole",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com",
+                                    "s3.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+                ],
+                "Policies": [
+                    {
+                        "PolicyName": "hikaru-hatsu-lambda-iam-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:List*",
+                                        "s3:Get*",
+                                        "logs:*",
+                                        "iam:PassRole",
+                                        "cloudwatch:PutMetricData",
+                                        "ssm:GetParameters",
+                                        "lambda:*"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "HikaruHatsuInvokeLambdaPermission": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::GetAtt": [
+                        "HikaruHatsuS3LambdaFunction",
+                        "Arn"
+                    ]
+                },
+                "Action": "lambda:InvokeFunction",
+                "Principal": "events.amazonaws.com",
+                "SourceArn": {
+                    "Fn::GetAtt": [
+                        "HikaruHatsuTestS3SchedularRule",
+                        "Arn"
+                    ]
+                }
+            }
+        },
+        "HikaruHatsuS3LambdaFunction": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": "HikaruHatsuS3LambdaFunction",
+                "Description": "Function to print Kon'nichiwa",
+                "Runtime": "python3.8",
+                "Code": {
+                    "S3Bucket": "hikaru-test-bucket",
+                    "S3Key": "Lambda/cft-lambda-s3BucketCode.zip"
+                },
+                "Handler": "cft-lambda-s3BucketCode.genkan",
+                "Layers": [
+                    "arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python38:1"
+                ],
+                "Role": {
+                    "Fn::GetAtt": [
+                        "HikaruHatsuS3LambdaFunExecutionRole",
+                        "Arn"
+                    ]
+                }
+            }
+        },
+        "HikaruHatsuTestS3SchedularRule": {
+            "Type": "AWS::Events::Rule",
+            "Properties": {
+                "Name": "HikaruHatsuTestS3SchedularRule",
+                "Description": "Schedular rule for hikaru test lambda S3",
+                "ScheduleExpression": "rate(1 minute)",
+                "State": "DISABLED",
+                "Targets": [
+                    {
+                        "Arn": {
+                            "Fn::GetAtt": [
+                                "HikaruHatsuS3LambdaFunction",
+                                "Arn"
+                            ]
+                        },
+                        "Id": "HikaruHatsuS3SchedularRuleTarget1",
+                        "Input": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "{",
+                                    "\"key1\": \"value1\"",
+                                    "}"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "HikaruHatsuSecretForGitHub": {
+            "Type": "AWS::SecretsManager::Secret",
+            "Properties": {
+                "Name": "HikaruHatsuSecretForGitHub",
+                "Description": "Stores github access token of Harshil Jain (jainh)",
+                "SecretString": "{\"github-access-token\": \"\"}"
+            }
+        },
+        "HikaruHatsuCodeBuildSourceCredentials": {
+            "Type": "AWS::CodeBuild::SourceCredential",
+            "Properties": {
+                "AuthType": "PERSONAL_ACCESS_TOKEN",
+                "ServerType": "GITHUB_ENTERPRISE",
+                "Token": "{{resolve:secretmanager:HikaruHatsuSecretForGitHub:SecretString:github-access-token}}"
+            }
+        },
+        "HikaruHatsuCodeBuildExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "HikaruHatsuCodeBuildExecutionRole",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com",
+                                    "s3.amazonaws.com",
+                                    "codebuild.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Policies": [
+                    {
+                        "PolicyName": "hikaru-hatsu-code-build-iam-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:List*",
+                                        "s3:Put*",
+                                        "s3:Get*",
+                                        "s3:DeleteObject",
+                                        "logs:*",
+                                        "iam:PassRole",
+                                        "cloudwatch:PutMetricData",
+                                        "ssm:GetParameters",
+                                        "lambda:*",
+                                        "ec2:*"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "HikaruHatsuCodeBuildSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupName": "HikaruHatsuCodeBuildSecurityGroup",
+                "VpcId": {
+                    "Fn::FindInMap": [
+                        "Environments",
+                        {
+                            "Ref": "Environment"
+                        },
+                        "VpcId"
+                    ]
+                },
+                "GroupDescription": "Security group used by Code Build Projects of Hikaru"
+            }
+        },
+        "HikaruHatsuCodeFetchCodeBuild": {
+            "Type": "AWS::CodeBuild::Project",
+            "Properties": {
+                "Description": "Code build resource to fetch changed code from GitHub and put the built files into S3 bucket",
+                "ServiceRole": {
+                    "Fn::GetAtt": [
+                        "HikaruHatsuCodeBuildExecutionRole",
+                        "Arn"
+                    ]
+                },
+                "Artifacts": {
+                    "Type": "NO_ARTIFACTS"
+                },
+                "Environment": {
+                    "ComputeType": "BUILD_GENERAL1_SMALL",
+                    "Image": "aws/codebuild/standard:6.0",
+                    "Type": "LINUX_CONTAINER"
+                },
+                "LogsConfig": {
+                    "CloudWatchLogs": {
+                        "Status": "ENABLED"
+                    }
+                },
+                "VpcConfig": {
+                    "VpcId": {
+                        "Fn::FindInMap": [
+                            "Environments",
+                            {
+                                "Ref": "Environment"
+                            },
+                            "VpcId"
+                        ]
+                    },
+                    "Subnets": [
+                        {
+                            "Fn::FindInMap": [
+                                "Environments",
+                                {
+                                    "Ref": "Environment"
+                                },
+                                "CodeBuildSubnet"
+                            ]
+                        }
+                    ],
+                    "SecurityGroupIds": [
+                        {
+                            "Ref": "HikaruHatsuCodeBuildSecurityGroup"
+                        }
+                    ]
+                },
+                "Source": {
+                    "Auth": {
+                        "Type": "OAUTH",
+                        "Resource": {
+                            "Ref": "HikaruHatsuCodeBuildSourceCredentials"
+                        }
+                    },
+                    "Type": "GITHUB_ENTERPRISE",
+                    "Location": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "https://git.autodesk.com/",
+                                {
+                                    "Fn::FindInMap": [
+                                        "Environments",
+                                        {
+                                            "Ref": "Environment"
+                                        },
+                                        "RepoOwner"
+                                    ]
+                                },
+                                "/",
+                                {
+                                    "Fn::FindInMap": [
+                                        "Environments",
+                                        {
+                                            "Ref": "Environment"
+                                        },
+                                        "RepoName"
+                                    ]
+                                },
+                                ".git"
+                            ]
+                        ]
+                    },
+                    "BuildSpec": "buildspec.yml"
+                }
+            }
+        },
+        "HikaruHatsuS3LambdaCodeBuild": {
+            "Type": "AWS::CodeBuild::Project",
+            "Properties": {
+                "Description": "Code build resource to update the test lambda declared in the same cft",
+                "ServiceRole": {
+                    "Fn::GetAtt": [
+                        "HikaruHatsuCodeBuildExecutionRole",
+                        "Arn"
+                    ]
+                },
+                "Artifacts": {
+                    "Type": "CODEPIPELINE"
+                },
+                "Environment": {
+                    "ComputeType": "BUILD_GENERAL1_SMALL",
+                    "Image": "aws/codebuild/standard:6.0",
+                    "Type": "LINUX_CONTAINER"
+                },
+                "LogsConfig": {
+                    "CloudWatchLogs": {
+                        "Status": "ENABLED"
+                    }
+                },
+                "VpcConfig": {
+                    "VpcId": {
+                        "Fn::FindInMap": [
+                            "Environments",
+                            {
+                                "Ref": "Environment"
+                            },
+                            "VpcId"
+                        ]
+                    },
+                    "Subnets": [
+                        {
+                            "Fn::FindInMap": [
+                                "Environments",
+                                {
+                                    "Ref": "Environment"
+                                },
+                                "CodeBuildSubnet"
+                            ]
+                        }
+                    ],
+                    "SecurityGroupIds": [
+                        {
+                            "Ref": "HikaruHatsuCodeBuildSecurityGroup"
+                        }
+                    ]
+                },
+                "Source": {
+                    "Type": "CODEPIPELINE",
+                    "BuildSpec": "deployspec.yml"
+                }
+            }
+        },
+        "HikaruHatsuCodePipelineExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "HikaruHatsuCodePipelineExecutionRole",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com",
+                                    "s3.amazonaws.com",
+                                    "codebuild.amazonaws.com",
+                                    "codepipeline.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Policies": [
+                    {
+                        "PolicyName": "hikaru-hatsu-code-pipeline-iam-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:List*",
+                                        "s3:Put*",
+                                        "s3:Get*",
+                                        "s3:DeleteObject",
+                                        "logs:*",
+                                        "iam:PassRole",
+                                        "cloudwatch:PutMetricData",
+                                        "ssm:GetParameters",
+                                        "lambda:*",
+                                        "ec2:*",
+                                        "codebuild:*"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "HikaruHatsuLambdaCodePipeline": {
+            "Type": "AWS::CodePipeline::Pipeline",
+            "Properties": {
+                "Name": "HikaruHatsuLambdaCodePipeline",
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "HikaruHatsuCodePipelineExecutionRole",
+                        "Arn"
+                    ]
+                },
+                "ArtifactStore": {
+                    "Type": "S3",
+                    "Location": "hikaru-code-pipeline-bucket"
+                },
+                "Stages": [
+                    {
+                        "Name": "SourceStage",
+                        "Actions": [
+                            {
+                                "Name": "SourceAction",
+                                "ActionTypeId": {
+                                    "Category": "Source",
+                                    "Owner": "AWS",
+                                    "Version": 1,
+                                    "Provider": "S3"
+                                },
+                                "Configuration": {
+                                    "S3Bucket": "hikaru-code-pipeline-bucket",
+                                    "S3ObjectKey": "CodeBuildFetchOutput/codeBuildFetchOutput.zip",
+                                    "PollForSourceChanges": true
+                                },
+                                "OutputArtifacts": [
+                                    {
+                                        "Name": "SourceOutput"
+                                    }
+                                ],
+                                "RunOrder": 1
+                            }
+                        ]
+                    },
+                    {
+                        "Name": "DeployStage",
+                        "Actions": [
+                            {
+                                "Name": "DeployAction",
+                                "ActionTypeId": {
+                                    "Category": "Build",
+                                    "Owner": "AWS",
+                                    "Provider": "CodeBuild",
+                                    "Version": 1
+                                },
+                                "Configuration": {
+                                    "ProjectName": {
+                                        "Ref": "HikaruHatsuS3LambdaCodeBuild"
+                                    }
+                                },
+                                "InputArtifacts": [
+                                    {
+                                        "Name": "SourceOutput"
+                                    }
+                                ],
+                                "OutputArtifacts": [
+                                    {
+                                        "Name": "BuildOutput"
+                                    }
+                                ],
+                                "RunOrder": 1
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+}
