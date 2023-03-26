@@ -112,3 +112,19 @@ Resources:
       RouteTableId: !Ref TestDomainPublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref TestDomainIGW
+Outputs:
+  TestDomainVpcId:
+    Description: Vpc Id of the test domain created by this CFT Stack
+    Value: !GetAtt TestDomainVPC.VpcId
+    Export:
+      Name: TestDomainVpcId
+  TestDomainPrivateSubnet1Id:
+    Description: Private Subnet 1 Id of the test domain created by this CFT Stack
+    Value: !GetAtt TestDomainPrivateSubnet1.SubnetId
+    Export:
+      Name: TestDomainPrivateSubnet1Id
+  TestDomainPublicSubnet1Id:
+    Description: Public Subnet 1 Id of the test domain created by this CFT Stack
+    Value: !GetAtt TestDomainPublicSubnet1.SubnetId
+    Export:
+      Name: TestDomainPublicSubnet1Id
