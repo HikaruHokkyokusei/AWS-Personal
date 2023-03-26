@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS CFT to create Ec2 Instance for hosting my personal website.
+Resources:
+  PersonalWebsiteEc2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-08795883c7b4b7140
+      InstanceType: t4g.small
+      KeyName: PersonalWebsiteEc2SshKeyPair
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref PersonalWebsiteEc2SecurityGroup
+          SubnetId: !ImportValue TestDomainPublicSubnet1Id
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: gp2
+            VolumeSize: 10
+            DeleteOnTermination: true
+      InstanceInitiatedShutdownBehavior: stop
+      PropagateTagsToVolumeOnCreation: true
+      EbsOptimized: true
+      Tags:
+        - Key: Name
+          Value: PersonalWebsiteEc2Instance
+
+  PersonalWebsiteEc2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: PersonalWebsiteEc2SecurityGroup
+      GroupDescription: Enable SSH access and allow HTTP(s) traffic from internet for the Personal Website EC2 Instances.
+      VpcId: !ImportValue TestDomainVpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
