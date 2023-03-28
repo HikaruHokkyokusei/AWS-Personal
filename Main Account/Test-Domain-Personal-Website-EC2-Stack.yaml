@@ -1,5 +1,24 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: AWS CFT to create Ec2 Instance for hosting my personal website.
+Parameters:
+  AppName:
+    Type: String
+    Description: App name which is used to create folder in home directory of the ec2 where code is pulled.
+    AllowedPattern: ^[a-z][a-z0-9-]*$
+  GitUrl:
+    Type: String
+    Description: Url of the git repo that needs to pulled into the app directory.
+    AllowedPattern: https://(www[.])?github\.com/.*[.]git$
+  GitBranchName:
+    Type: String
+    Description: Name of the branch that should be pulled from the GitHub.
+    MinLength: 1
+  SshCidr:
+    Type: String
+    Description: Cidr Ip address that is allowed to ssh into the ec2 machine.
+    AllowedPattern: |-
+      ^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)/(3[0-2]|[1-2]?\d)$
+
 Resources:
   PersonalWebsiteEc2Instance:
     Type: AWS::EC2::Instance
@@ -22,6 +41,63 @@ Resources:
       InstanceInitiatedShutdownBehavior: stop
       PropagateTagsToVolumeOnCreation: true
       EbsOptimized: true
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/usr/bin/env bash
+            
+            sudo apt update && sudo apt upgrade
+            
+            # Setup node.js, pnpm and pm2
+            sudo apt install -y curl
+            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+            sudo apt install -y nodejs
+            sudo npm install -g --upgrade npm pm2
+            
+            # Setup nginx
+            sudo apt install -y nginx
+            
+            # Setup docker
+            sudo apt-get update
+            sudo apt-get install ca-certificates curl gnupg
+            sudo mkdir -m 0755 -p /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg
+            echo \
+              "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+              "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
+              sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt-get update
+            sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            sudo apt install -y docker-compose
+            sudo systemctl enable docker.service
+            sudo systemctl enable containerd.service
+            
+            cd ~
+            mkdir ${AppName}
+            cd ${AppName}
+            git init
+            git branch -m ${GitBranchName}
+            git pull ${GitUrl} ${GitBranchName}
+            
+            touch .env
+            touch run.sh
+            
+            cat >.env <<EOF
+            DOCKER_VERSION_TAG=0.0.1
+            PORT=6969
+            
+            EnvName=prd
+            AllowedOrigins=hikaru-hokkyokusei.com
+            EOF
+            
+            cat >run.sh <<EOF
+            #!/usr/bin/env bash
+            
+            cd ~/personal-website || exit
+            sudo docker-compose up
+            EOF
+            
+            pm2 start run.sh
       Tags:
         - Key: Name
           Value: PersonalWebsiteEc2Instance
@@ -36,11 +112,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref SshCidr
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
