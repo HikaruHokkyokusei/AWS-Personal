@@ -12,6 +12,7 @@ Parameters:
   GitBranchName:
     Type: String
     Description: Name of the branch that should be pulled from the GitHub.
+    Default: master
     MinLength: 1
   SshCidr:
     Type: String
