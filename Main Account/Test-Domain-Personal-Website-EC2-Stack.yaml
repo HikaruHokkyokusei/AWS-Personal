@@ -58,6 +58,40 @@ Resources:
             # Setup nginx
             sudo apt install -y nginx
             
+            cd /etc/nginx/sites-available
+            sudo cat > default <<EOF
+            # Credits: Hikaru Hokkyokusei
+            server {
+                listen       443 ssl http2 default_server;
+                listen       [::]:443 ssl http2 default_server;
+                server_name  hikaru-hokkyokusei.com;
+
+                ssl_certificate				ssl-certificates/personal-website/certificate.crt;
+                ssl_certificate_key			ssl-certificates/personal-website/privateKey.key;
+                ssl_session_cache			shared:SSL:1m;
+                ssl_session_timeout			10m;
+                ssl_ciphers					HIGH:!aNULL:!MD5;
+                ssl_prefer_server_ciphers	on;
+
+                location ~ /ws {
+                    proxy_pass                http://localhost:6969;
+                    proxy_read_timeout        60;
+                    proxy_connect_timeout     60;
+                    proxy_redirect            off;
+
+                    proxy_http_version  1.1;
+                    proxy_set_header    Upgrade $http_upgrade;
+                    proxy_set_header    Connection 'upgrade';
+                    proxy_set_header    Host $host;
+                    proxy_cache_bypass  $http_upgrade;
+                }
+
+                location / {
+                    proxy_pass http://localhost:6969/;
+                }
+            }
+            EOF
+            
             # Setup docker
             sudo apt-get update
             sudo apt-get install ca-certificates curl gnupg
@@ -73,7 +107,8 @@ Resources:
             sudo systemctl enable docker.service
             sudo systemctl enable containerd.service
             
-            cd ~
+            # App setup
+            cd /home/ubuntu
             mkdir ${AppName}
             cd ${AppName}
             git init
@@ -84,7 +119,7 @@ Resources:
             touch run.sh
             
             cat >.env <<EOF
-            DOCKER_VERSION_TAG=0.0.1
+            DOCKER_VERSION_TAG=0.0.0
             PORT=6969
             
             EnvName=prd
@@ -94,10 +129,11 @@ Resources:
             cat >run.sh <<EOF
             #!/usr/bin/env bash
             
-            cd ~/personal-website || exit
+            cd /home/ubuntu/${AppName} || exit
             sudo docker-compose up
             EOF
             
+            # Starting the application
             pm2 start run.sh
       Tags:
         - Key: Name
