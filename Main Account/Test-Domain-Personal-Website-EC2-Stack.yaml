@@ -47,7 +47,7 @@ Resources:
           Fn::Sub: |
             #!/usr/bin/env bash
             
-            sudo apt update && sudo apt upgrade
+            sudo apt update -y && sudo apt upgrade -y
             
             # Setup node.js, pnpm and pm2
             sudo apt install -y curl
@@ -58,16 +58,15 @@ Resources:
             # Setup nginx
             sudo apt install -y nginx
             
-            cd /etc/nginx/sites-available
-            sudo cat > default <<EOF
-            # Credits: Hikaru Hokkyokusei
+            cd /etc/nginx/sites-enabled
+            sudo cat >default <<EOF
             server {
                 listen       443 ssl http2 default_server;
                 listen       [::]:443 ssl http2 default_server;
                 server_name  hikaru-hokkyokusei.com;
 
-                ssl_certificate				ssl-certificates/personal-website/certificate.crt;
-                ssl_certificate_key			ssl-certificates/personal-website/privateKey.key;
+                ssl_certificate				ssl-certificates/${AppName}/certificate.crt;
+                ssl_certificate_key			ssl-certificates/${AppName}/privateKey.key;
                 ssl_session_cache			shared:SSL:1m;
                 ssl_session_timeout			10m;
                 ssl_ciphers					HIGH:!aNULL:!MD5;
@@ -92,6 +91,13 @@ Resources:
             }
             EOF
             
+            cd /etc/nginx/
+            sudo mkdir ssl-certificates && cd ssl-certificates
+            sudo mkdir ${AppName} && cd ${AppName}
+            printf '\n\n\n\n\nhikaru-hokkyokusei.com\n\n' | sudo openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes -keyout privateKey.key -out certificate.crt
+            
+            sudo systemctl restart nginx
+            
             # Setup docker
             sudo apt-get update
             sudo apt-get install ca-certificates curl gnupg
@@ -107,7 +113,7 @@ Resources:
             sudo systemctl enable docker.service
             sudo systemctl enable containerd.service
             
-            # App setup
+            # Setup App files
             cd /home/ubuntu
             mkdir ${AppName}
             cd ${AppName}
