@@ -24,7 +24,7 @@ Resources:
   PersonalWebsiteEc2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: ami-08795883c7b4b7140
+      ImageId: ami-077053fb4029de92f
       InstanceType: t4g.small
       KeyName: PersonalWebsiteEc2SshKeyPair
       NetworkInterfaces:
@@ -47,6 +47,7 @@ Resources:
           Fn::Sub: |
             #!/usr/bin/env bash
             
+            cd /home/ubuntu
             sudo apt update -y && sudo apt upgrade -y
             
             # Setup node.js, pnpm and pm2
@@ -54,49 +55,6 @@ Resources:
             curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
             sudo apt install -y nodejs
             sudo npm install -g --upgrade npm pm2
-            
-            # Setup nginx
-            sudo apt install -y nginx
-            
-            cd /etc/nginx/sites-enabled
-            sudo cat >default <<EOF
-            server {
-                listen       443 ssl http2 default_server;
-                listen       [::]:443 ssl http2 default_server;
-                server_name  hikaru-hokkyokusei.com;
-
-                ssl_certificate				ssl-certificates/${AppName}/certificate.crt;
-                ssl_certificate_key			ssl-certificates/${AppName}/privateKey.key;
-                ssl_session_cache			shared:SSL:1m;
-                ssl_session_timeout			10m;
-                ssl_ciphers					HIGH:!aNULL:!MD5;
-                ssl_prefer_server_ciphers	on;
-
-                location ~ /ws {
-                    proxy_pass                http://localhost:6969;
-                    proxy_read_timeout        60;
-                    proxy_connect_timeout     60;
-                    proxy_redirect            off;
-
-                    proxy_http_version  1.1;
-                    proxy_set_header    Upgrade $http_upgrade;
-                    proxy_set_header    Connection 'upgrade';
-                    proxy_set_header    Host $host;
-                    proxy_cache_bypass  $http_upgrade;
-                }
-
-                location / {
-                    proxy_pass http://localhost:6969/;
-                }
-            }
-            EOF
-            
-            cd /etc/nginx/
-            sudo mkdir ssl-certificates && cd ssl-certificates
-            sudo mkdir ${AppName} && cd ${AppName}
-            printf '\n\n\n\n\nhikaru-hokkyokusei.com\n\n' | sudo openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes -keyout privateKey.key -out certificate.crt
-            
-            sudo systemctl restart nginx
             
             # Setup docker
             sudo apt-get update
@@ -112,6 +70,49 @@ Resources:
             sudo apt install -y docker-compose
             sudo systemctl enable docker.service
             sudo systemctl enable containerd.service
+            
+            # Setup nginx
+            sudo apt install -y nginx
+            
+            cd /etc/nginx/sites-enabled
+            sudo cat >default <<EOF
+            server {
+                listen       443 ssl http2 default_server;
+                listen       [::]:443 ssl http2 default_server;
+                server_name  hikaru-hokkyokusei.com;
+
+                ssl_certificate             ssl-certificates/${AppName}/certificate.crt;
+                ssl_certificate_key         ssl-certificates/${AppName}/privateKey.key;
+                ssl_session_cache           shared:SSL:1m;
+                ssl_session_timeout         10m;
+                ssl_ciphers                 HIGH:!aNULL:!MD5;
+                ssl_prefer_server_ciphers   on;
+
+                location ~ /ws {
+                    proxy_pass                http://localhost:6969;
+                    proxy_read_timeout        60;
+                    proxy_connect_timeout     60;
+                    proxy_redirect            off;
+
+                    proxy_http_version  1.1;
+                    proxy_set_header    Upgrade \$http_upgrade;
+                    proxy_set_header    Connection 'upgrade';
+                    proxy_set_header    Host \$host;
+                    proxy_cache_bypass  \$http_upgrade;
+                }
+
+                location / {
+                    proxy_pass http://localhost:6969/;
+                }
+            }
+            EOF
+            
+            cd /etc/nginx/
+            sudo mkdir ssl-certificates && cd ssl-certificates
+            sudo mkdir ${AppName} && cd ${AppName}
+            printf '\n\n\n\n\nhikaru-hokkyokusei.com\n\n' | sudo openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes -keyout privateKey.key -out certificate.crt
+            
+            sudo systemctl restart nginx
             
             # Setup App files
             cd /home/ubuntu
