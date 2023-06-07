@@ -1,6 +1,16 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: CFT to setup VPC, Route Tables, IGW and subnets for Test Domain
 Resources:
+  AdminAccessIAMGroup:
+    Type: 'AWS::IAM::Group'
+    Properties:
+      GroupName: AdminAccessIAMGroup
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AdministratorAccess'
+        - 'arn:aws:iam::aws:policy/IAMUserChangePassword'
+        - 'arn:aws:iam::aws:policy/AWSBillingConductorReadOnlyAccess'
+        - 'arn:aws:iam::aws:policy/AWSBillingReadOnlyAccess'
+
   TestDomainVPC:
     Type: AWS::EC2::VPC
     Properties:
