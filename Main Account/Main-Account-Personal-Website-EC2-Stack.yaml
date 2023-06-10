@@ -21,9 +21,53 @@ Parameters:
       ^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)/(3[0-2]|[1-2]?\d)$
 
 Resources:
+  PersonalWebsiteEC2InstanceIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: PersonalWebsiteEC2InstanceIAMRole
+      Description: IAM Role for Personal Website EC2 Instance to access SecretsManager
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: SecretsManagerReadOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: "*"
+
+  PersonalWebsiteEC2IAMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: PersonalWebsiteEC2IAMInstanceProfile
+      Path: /
+      Roles:
+        - !Ref PersonalWebsiteEC2InstanceIAMRole
+
+  PersonalWebsiteSecretsManager:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: "PersonalWebsiteSecretsManager"
+      Description: "Secret Manager to store Env. Vars. for Personal Website EC2 Instance."
+      SecretString: >-
+        {
+          "Key": "Value"
+        }
+
+
   PersonalWebsiteEc2Instance:
     Type: AWS::EC2::Instance
     Properties:
+      IamInstanceProfile: !Ref PersonalWebsiteEC2IAMInstanceProfile
       ImageId: ami-077053fb4029de92f
       InstanceType: t4g.small
       KeyName: PersonalWebsiteEc2SshKeyPair
@@ -81,12 +125,12 @@ Resources:
                 listen       [::]:443 ssl http2 default_server;
                 server_name  hikaru-hokkyokusei.com;
 
-                ssl_certificate             ssl-certificates/${AppName}/certificate.crt;
-                ssl_certificate_key         ssl-certificates/${AppName}/privateKey.key;
-                ssl_session_cache           shared:SSL:1m;
-                ssl_session_timeout         10m;
-                ssl_ciphers                 HIGH:!aNULL:!MD5;
-                ssl_prefer_server_ciphers   on;
+                ssl_certificate				ssl-certificates/${AppName}/certificate.crt;
+                ssl_certificate_key			ssl-certificates/${AppName}/privateKey.key;
+                ssl_session_cache			shared:SSL:1m;
+                ssl_session_timeout			10m;
+                ssl_ciphers					HIGH:!aNULL:!MD5;
+                ssl_prefer_server_ciphers	on;
 
                 location ~ /ws {
                     proxy_pass                http://localhost:6969;
@@ -95,10 +139,10 @@ Resources:
                     proxy_redirect            off;
 
                     proxy_http_version  1.1;
-                    proxy_set_header    Upgrade \$http_upgrade;
+                    proxy_set_header    Upgrade $http_upgrade;
                     proxy_set_header    Connection 'upgrade';
-                    proxy_set_header    Host \$host;
-                    proxy_cache_bypass  \$http_upgrade;
+                    proxy_set_header    Host $host;
+                    proxy_cache_bypass  $http_upgrade;
                 }
 
                 location / {
