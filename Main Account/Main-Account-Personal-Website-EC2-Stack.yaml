@@ -1,10 +1,20 @@
-AWSTemplateFormatVersion: "2010-09-09"
+AWSTemplateFormatVersion: 2010-09-09
 Description: AWS CFT to create Ec2 Instance for hosting my personal website.
+Transform:
+  - AWS::LanguageExtensions
 Parameters:
   AppName:
     Type: String
     Description: App name which is used to create folder in home directory of the ec2 where code is pulled.
     AllowedPattern: ^[a-z][a-z0-9-]*$
+  WebsiteHostName:
+    Type: String
+    Description: Domain/Hostname of the website on which the app should be hosted.
+  AppPortNumber:
+    Type: Number
+    Description: Port number on which the app should run.
+    MinValue: 1000
+    MaxValue: 65562
   GitUrl:
     Type: String
     Description: Url of the git repo that needs to pulled into the app directory.
@@ -19,7 +29,10 @@ Parameters:
     Description: Cidr Ip address that is allowed to ssh into the ec2 machine.
     AllowedPattern: |-
       ^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)/(3[0-2]|[1-2]?\d)$
-
+  PersonalWebsiteSecretManagerId:
+    Type: String
+    Description: Name of the secret manager that stores env. vars. for the EC2 Instance
+    Default: PersonalWebsiteEC2SecretsManager
 Resources:
   PersonalWebsiteEC2InstanceIAMRole:
     Type: AWS::IAM::Role
@@ -27,18 +40,18 @@ Resources:
       RoleName: PersonalWebsiteEC2InstanceIAMRole
       Description: IAM Role for Personal Website EC2 Instance to access SecretsManager
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: 2012-10-17
         Statement:
           - Effect: Allow
             Principal:
               Service: ec2.amazonaws.com
-            Action: "sts:AssumeRole"
+            Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
         - PolicyName: SecretsManagerReadOnly
           PolicyDocument:
-            Version: "2012-10-17"
+            Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action:
@@ -53,16 +66,23 @@ Resources:
       Roles:
         - !Ref PersonalWebsiteEC2InstanceIAMRole
 
-  PersonalWebsiteSecretsManager:
+  PersonalWebsiteEC2SecretsManager:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: "PersonalWebsiteSecretsManager"
-      Description: "Secret Manager to store Env. Vars. for Personal Website EC2 Instance."
-      SecretString: >-
-        {
-          "Key": "Value"
-        }
-
+      Name: !Ref PersonalWebsiteSecretManagerId
+      Description: Secret Manager to store Env. Vars. for Personal Website EC2 Instance.
+      SecretString:
+        Fn::ToJsonString:
+          EnvName: prd
+          EnableRoutingLogs: false
+          PORT: !Ref AppPortNumber
+          AllowedOriginsRegEx: !Join
+            - ''
+            - - "(http|ws)s?:[/]{2}(www[.])?"
+              - !Join ['[.]', !Split ['.', !Ref WebsiteHostName]]
+          StripePublicKey: ""
+          StripePrivateKey: ""
+          PUBLIC_SERVER_LOCATION_ORIGIN: !Sub https://${WebsiteHostName}
 
   PersonalWebsiteEc2Instance:
     Type: AWS::EC2::Instance
@@ -90,102 +110,88 @@ Resources:
         Fn::Base64:
           Fn::Sub: |
             #!/usr/bin/env bash
+            apt -y update && apt -y upgrade
             
-            cd /home/ubuntu
-            sudo apt update -y && sudo apt upgrade -y
+            # Switch to non-root user
+            sudo -u ubuntu -i <<'EndOfNonRootCommands'
             
             # Setup node.js, pnpm and pm2
-            sudo apt install -y curl
+            sudo apt -y install curl
             curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-            sudo apt install -y nodejs
-            sudo npm install -g --upgrade npm pm2
+            sudo apt -y install nodejs && sudo npm install -g --upgrade npm pm2
             
             # Setup docker
-            sudo apt-get update
-            sudo apt-get install ca-certificates curl gnupg
+            sudo apt-get -y update && sudo apt-get -y install ca-certificates curl gnupg
             sudo mkdir -m 0755 -p /etc/apt/keyrings
             curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg
             echo \
               "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
               "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
               sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-            sudo apt-get update
-            sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-            sudo apt install -y docker-compose
-            sudo systemctl enable docker.service
-            sudo systemctl enable containerd.service
+            sudo apt-get -y update && sudo apt-get -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            sudo apt -y install docker-compose
+            sudo systemctl enable docker.service && sudo systemctl enable containerd.service
+            
+            # Setup App files
+            cd ~ && mkdir ${AppName} && cd ${AppName}
+            git init && git branch -m ${GitBranchName} && git remote add origin ${GitUrl} && git pull origin ${GitBranchName}
+            
+            cat >run.sh <<EOF
+            #!/usr/bin/env bash
+            cd ~/${AppName} || exit
+            sudo docker system prune -f -a && sudo docker-compose up --no-deps --build --force-recreate
+            EOF
+            
+            # Setting up env. vars.
+            sudo apt -y install awscli jq
+            aws configure set region ${AWS::Region}
+            aws secretsmanager get-secret-value --secret-id ${PersonalWebsiteSecretManagerId} --output json | jq -r '.SecretString' | jq -r 'keys[] as $k | "\($k)=\(.[$k])"' > .env
+            
+            # Starting the application
+            pm2 start ./run.sh --no-autorestart
+            
+            EndOfNonRootCommands
             
             # Setup nginx
-            sudo apt install -y nginx
+            sudo apt -y install nginx
             
-            cd /etc/nginx/sites-enabled
-            sudo cat >default <<EOF
+            cd /etc/nginx/conf.d
+            sudo cat >${WebsiteHostName}.conf <<EOF
             server {
-                listen       443 ssl http2 default_server;
-                listen       [::]:443 ssl http2 default_server;
-                server_name  hikaru-hokkyokusei.com;
+                listen                      443 ssl http2 default_server;
+                listen                      [::]:443 ssl http2 default_server;
+                server_name                 ${WebsiteHostName};
 
-                ssl_certificate				ssl-certificates/${AppName}/certificate.crt;
-                ssl_certificate_key			ssl-certificates/${AppName}/privateKey.key;
-                ssl_session_cache			shared:SSL:1m;
-                ssl_session_timeout			10m;
-                ssl_ciphers					HIGH:!aNULL:!MD5;
-                ssl_prefer_server_ciphers	on;
+                ssl_certificate             ssl-certificates/${AppName}/certificate.crt;
+                ssl_certificate_key         ssl-certificates/${AppName}/privateKey.key;
+                ssl_session_cache           shared:SSL:1m;
+                ssl_session_timeout         10m;
+                ssl_ciphers                 HIGH:!aNULL:!MD5;
+                ssl_prefer_server_ciphers   on;
 
                 location ~ /ws {
-                    proxy_pass                http://localhost:6969;
-                    proxy_read_timeout        60;
-                    proxy_connect_timeout     60;
-                    proxy_redirect            off;
+                    proxy_pass              http://localhost:${AppPortNumber};
+                    proxy_read_timeout      60;
+                    proxy_connect_timeout   60;
+                    proxy_redirect          off;
 
-                    proxy_http_version  1.1;
-                    proxy_set_header    Upgrade $http_upgrade;
-                    proxy_set_header    Connection 'upgrade';
-                    proxy_set_header    Host $host;
-                    proxy_cache_bypass  $http_upgrade;
+                    proxy_http_version      1.1;
+                    proxy_set_header        Upgrade \$http_upgrade;
+                    proxy_set_header        Connection 'upgrade';
+                    proxy_set_header        Host \$host;
+                    proxy_cache_bypass      \$http_upgrade;
                 }
 
                 location / {
-                    proxy_pass http://localhost:6969/;
+                    proxy_pass              http://localhost:${AppPortNumber}/;
                 }
             }
             EOF
             
-            cd /etc/nginx/
-            sudo mkdir ssl-certificates && cd ssl-certificates
-            sudo mkdir ${AppName} && cd ${AppName}
-            printf '\n\n\n\n\nhikaru-hokkyokusei.com\n\n' | sudo openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes -keyout privateKey.key -out certificate.crt
+            cd /etc/nginx/ && sudo mkdir ssl-certificates && sudo mkdir ssl-certificates/${AppName} && cd ./ssl-certificates/${AppName}
+            printf '\n\n\n\n\n${WebsiteHostName}\n\n' | sudo openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes -keyout privateKey.key -out certificate.crt
             
             sudo systemctl restart nginx
-            
-            # Setup App files
-            cd /home/ubuntu
-            mkdir ${AppName}
-            cd ${AppName}
-            git init
-            git branch -m ${GitBranchName}
-            git pull ${GitUrl} ${GitBranchName}
-            
-            touch .env
-            touch run.sh
-            
-            cat >.env <<EOF
-            DOCKER_VERSION_TAG=0.0.0
-            PORT=6969
-            
-            EnvName=prd
-            AllowedOrigins=hikaru-hokkyokusei.com
-            EOF
-            
-            cat >run.sh <<EOF
-            #!/usr/bin/env bash
-            
-            cd /home/ubuntu/${AppName} || exit
-            sudo docker-compose up
-            EOF
-            
-            # Starting the application
-            pm2 start run.sh
       Tags:
         - Key: Name
           Value: PersonalWebsiteEc2Instance
